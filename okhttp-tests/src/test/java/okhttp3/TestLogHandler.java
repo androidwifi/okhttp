@@ -25,23 +25,26 @@ import java.util.logging.LogRecord;
  * assertions about them.
  */
 public final class TestLogHandler extends Handler {
-  private final List<String> logs = new ArrayList<>();
+    private final List<String> logs = new ArrayList<>();
 
-  @Override public synchronized void publish(LogRecord logRecord) {
-    logs.add(logRecord.getLevel() + ": " + logRecord.getMessage());
-    notifyAll();
-  }
-
-  @Override public void flush() {
-  }
-
-  @Override public void close() throws SecurityException {
-  }
-
-  public synchronized String take() throws InterruptedException {
-    while (logs.isEmpty()) {
-      wait();
+    @Override
+    public synchronized void publish(LogRecord logRecord) {
+        logs.add(logRecord.getLevel() + ": " + logRecord.getMessage());
+        notifyAll();
     }
-    return logs.remove(0);
-  }
+
+    @Override
+    public void flush() {
+    }
+
+    @Override
+    public void close() throws SecurityException {
+    }
+
+    public synchronized String take() throws InterruptedException {
+        while (logs.isEmpty()) {
+            wait();
+        }
+        return logs.remove(0);
+    }
 }

@@ -19,7 +19,7 @@ import okhttp3.Protocol;
 
 public class HttpOverSpdy3Test extends HttpOverSpdyTest {
 
-  public HttpOverSpdy3Test() {
-    super(Protocol.SPDY_3);
-  }
+    public HttpOverSpdy3Test() {
+        super(Protocol.SPDY_3);
+    }
 }

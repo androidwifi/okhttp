@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -39,160 +40,176 @@ import static okhttp3.ws.WebSocket.TEXT;
  * href="http://autobahn.ws/testsuite/">Autobahn Testsuite</a>.
  */
 public final class AutobahnTester {
-  private static final String HOST = "ws://localhost:9001";
+    private static final String HOST = "ws://localhost:9001";
 
-  public static void main(String... args) throws IOException {
-    new AutobahnTester().run();
-  }
-
-  final OkHttpClient client = new OkHttpClient();
-
-  private WebSocketCall newWebSocket(String path) {
-    Request request = new Request.Builder().url(HOST + path).build();
-    return WebSocketCall.create(client, request);
-  }
-
-  public void run() throws IOException {
-    try {
-      long count = getTestCount();
-      System.out.println("Test count: " + count);
-
-      for (long number = 1; number <= count; number++) {
-        runTest(number, count);
-      }
-
-      updateReports();
-    } finally {
-      client.dispatcher().executorService().shutdown();
+    public static void main(String... args) throws IOException {
+        new AutobahnTester().run();
     }
-  }
 
-  private void runTest(final long number, final long count) throws IOException {
-    final CountDownLatch latch = new CountDownLatch(1);
-    final AtomicLong startNanos = new AtomicLong();
-    newWebSocket("/runCase?case=" + number + "&agent=okhttp") //
-        .enqueue(new WebSocketListener() {
-          private final ExecutorService sendExecutor = Executors.newSingleThreadExecutor();
-          private WebSocket webSocket;
+    final OkHttpClient client = new OkHttpClient();
 
-          @Override public void onOpen(WebSocket webSocket, Response response) {
-            this.webSocket = webSocket;
+    private WebSocketCall newWebSocket(String path) {
+        Request request = new Request.Builder().url(HOST + path).build();
+        return WebSocketCall.create(client, request);
+    }
 
-            System.out.println("Executing test case " + number + "/" + count);
-            startNanos.set(System.nanoTime());
-          }
+    public void run() throws IOException {
+        try {
+            long count = getTestCount();
+            System.out.println("Test count: " + count);
 
-          @Override public void onMessage(final ResponseBody message) throws IOException {
-            final RequestBody response;
-            if (message.contentType() == TEXT) {
-              response = RequestBody.create(TEXT, message.string());
-            } else {
-              BufferedSource source = message.source();
-              response = RequestBody.create(BINARY, source.readByteString());
-              source.close();
+            for (long number = 1; number <= count; number++) {
+                runTest(number, count);
             }
-            sendExecutor.execute(new Runnable() {
-              @Override public void run() {
-                try {
-                  webSocket.sendMessage(response);
-                } catch (IOException e) {
-                  e.printStackTrace(System.out);
-                }
-              }
-            });
-          }
 
-          @Override public void onPong(Buffer payload) {
-          }
+            updateReports();
+        } finally {
+            client.dispatcher().executorService().shutdown();
+        }
+    }
 
-          @Override public void onClose(int code, String reason) {
-            sendExecutor.shutdown();
-            latch.countDown();
-          }
+    private void runTest(final long number, final long count) throws IOException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicLong startNanos = new AtomicLong();
+        newWebSocket("/runCase?case=" + number + "&agent=okhttp") //
+                .enqueue(new WebSocketListener() {
+                    private final ExecutorService sendExecutor = Executors.newSingleThreadExecutor();
+                    private WebSocket webSocket;
 
-          @Override public void onFailure(IOException e, Response response) {
-            e.printStackTrace(System.out);
-            latch.countDown();
-          }
+                    @Override
+                    public void onOpen(WebSocket webSocket, Response response) {
+                        this.webSocket = webSocket;
+
+                        System.out.println("Executing test case " + number + "/" + count);
+                        startNanos.set(System.nanoTime());
+                    }
+
+                    @Override
+                    public void onMessage(final ResponseBody message) throws IOException {
+                        final RequestBody response;
+                        if (message.contentType() == TEXT) {
+                            response = RequestBody.create(TEXT, message.string());
+                        } else {
+                            BufferedSource source = message.source();
+                            response = RequestBody.create(BINARY, source.readByteString());
+                            source.close();
+                        }
+                        sendExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    webSocket.sendMessage(response);
+                                } catch (IOException e) {
+                                    e.printStackTrace(System.out);
+                                }
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onPong(Buffer payload) {
+                    }
+
+                    @Override
+                    public void onClose(int code, String reason) {
+                        sendExecutor.shutdown();
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onFailure(IOException e, Response response) {
+                        e.printStackTrace(System.out);
+                        latch.countDown();
+                    }
+                });
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for test " + number + " to finish.");
+            }
+        } catch (InterruptedException e) {
+            throw new AssertionError();
+        }
+
+        long endNanos = System.nanoTime();
+        long tookMs = TimeUnit.NANOSECONDS.toMillis(endNanos - startNanos.get());
+        System.out.println("Took " + tookMs + "ms");
+    }
+
+    private long getTestCount() throws IOException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicLong countRef = new AtomicLong();
+        final AtomicReference<IOException> failureRef = new AtomicReference<>();
+        newWebSocket("/getCaseCount").enqueue(new WebSocketListener() {
+            @Override
+            public void onOpen(WebSocket webSocket, Response response) {
+            }
+
+            @Override
+            public void onMessage(ResponseBody message) throws IOException {
+                countRef.set(message.source().readDecimalLong());
+                message.close();
+            }
+
+            @Override
+            public void onPong(Buffer payload) {
+            }
+
+            @Override
+            public void onClose(int code, String reason) {
+                latch.countDown();
+            }
+
+            @Override
+            public void onFailure(IOException e, Response response) {
+                failureRef.set(e);
+                latch.countDown();
+            }
         });
-    try {
-      if (!latch.await(30, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("Timed out waiting for test " + number + " to finish.");
-      }
-    } catch (InterruptedException e) {
-      throw new AssertionError();
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for count.");
+            }
+        } catch (InterruptedException e) {
+            throw new AssertionError();
+        }
+        IOException failure = failureRef.get();
+        if (failure != null) {
+            throw failure;
+        }
+        return countRef.get();
     }
 
-    long endNanos = System.nanoTime();
-    long tookMs = TimeUnit.NANOSECONDS.toMillis(endNanos - startNanos.get());
-    System.out.println("Took " + tookMs + "ms");
-  }
+    private void updateReports() {
+        final CountDownLatch latch = new CountDownLatch(1);
+        newWebSocket("/updateReports?agent=" + Version.userAgent()).enqueue(new WebSocketListener() {
+            @Override
+            public void onOpen(WebSocket webSocket, Response response) {
+            }
 
-  private long getTestCount() throws IOException {
-    final CountDownLatch latch = new CountDownLatch(1);
-    final AtomicLong countRef = new AtomicLong();
-    final AtomicReference<IOException> failureRef = new AtomicReference<>();
-    newWebSocket("/getCaseCount").enqueue(new WebSocketListener() {
-      @Override public void onOpen(WebSocket webSocket, Response response) {
-      }
+            @Override
+            public void onMessage(ResponseBody message) throws IOException {
+            }
 
-      @Override public void onMessage(ResponseBody message) throws IOException {
-        countRef.set(message.source().readDecimalLong());
-        message.close();
-      }
+            @Override
+            public void onPong(Buffer payload) {
+            }
 
-      @Override public void onPong(Buffer payload) {
-      }
+            @Override
+            public void onClose(int code, String reason) {
+                latch.countDown();
+            }
 
-      @Override public void onClose(int code, String reason) {
-        latch.countDown();
-      }
-
-      @Override public void onFailure(IOException e, Response response) {
-        failureRef.set(e);
-        latch.countDown();
-      }
-    });
-    try {
-      if (!latch.await(10, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("Timed out waiting for count.");
-      }
-    } catch (InterruptedException e) {
-      throw new AssertionError();
+            @Override
+            public void onFailure(IOException e, Response response) {
+                latch.countDown();
+            }
+        });
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for count.");
+            }
+        } catch (InterruptedException e) {
+            throw new AssertionError();
+        }
     }
-    IOException failure = failureRef.get();
-    if (failure != null) {
-      throw failure;
-    }
-    return countRef.get();
-  }
-
-  private void updateReports() {
-    final CountDownLatch latch = new CountDownLatch(1);
-    newWebSocket("/updateReports?agent=" + Version.userAgent()).enqueue(new WebSocketListener() {
-      @Override public void onOpen(WebSocket webSocket, Response response) {
-      }
-
-      @Override public void onMessage(ResponseBody message) throws IOException {
-      }
-
-      @Override public void onPong(Buffer payload) {
-      }
-
-      @Override public void onClose(int code, String reason) {
-        latch.countDown();
-      }
-
-      @Override public void onFailure(IOException e, Response response) {
-        latch.countDown();
-      }
-    });
-    try {
-      if (!latch.await(10, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("Timed out waiting for count.");
-      }
-    } catch (InterruptedException e) {
-      throw new AssertionError();
-    }
-  }
 }

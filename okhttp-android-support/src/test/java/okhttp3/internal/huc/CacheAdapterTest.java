@@ -27,9 +27,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+
 import okhttp3.AbstractResponseCache;
 import okhttp3.OkHttpClient;
 import okhttp3.OkUrlFactory;
@@ -40,6 +42,7 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.RecordingHostnameVerifier;
 import okio.Buffer;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -52,225 +55,237 @@ import static org.junit.Assert.assertTrue;
 /**
  * A white-box test for {@link CacheAdapter}. See also:
  * <ul>
- *     <li>{@link ResponseCacheTest} for black-box tests that check that {@link ResponseCache}
- *         classes are called correctly by OkHttp.
- *     <li>{@link JavaApiConverterTest} for tests that check Java API classes / OkHttp conversion
- *         logic.
+ * <li>{@link ResponseCacheTest} for black-box tests that check that {@link ResponseCache}
+ * classes are called correctly by OkHttp.
+ * <li>{@link JavaApiConverterTest} for tests that check Java API classes / OkHttp conversion
+ * logic.
  * </ul>
  */
 public class CacheAdapterTest {
-  private SSLContext sslContext = SslContextBuilder.localhost();
-  private HostnameVerifier hostnameVerifier = new RecordingHostnameVerifier();
-  private MockWebServer server;
-  private OkHttpClient client;
-  private HttpURLConnection connection;
+    private SSLContext sslContext = SslContextBuilder.localhost();
+    private HostnameVerifier hostnameVerifier = new RecordingHostnameVerifier();
+    private MockWebServer server;
+    private OkHttpClient client;
+    private HttpURLConnection connection;
 
-  @Before public void setUp() throws Exception {
-    server = new MockWebServer();
-    client = new OkHttpClient();
-  }
-
-  @After public void tearDown() throws Exception {
-    if (connection != null) {
-      connection.disconnect();
+    @Before
+    public void setUp() throws Exception {
+        server = new MockWebServer();
+        client = new OkHttpClient();
     }
-    server.shutdown();
-  }
 
-  @Test public void get_httpGet() throws Exception {
-    final URL serverUrl = configureServer(new MockResponse());
-    assertEquals("http", serverUrl.getProtocol());
+    @After
+    public void tearDown() throws Exception {
+        if (connection != null) {
+            connection.disconnect();
+        }
+        server.shutdown();
+    }
 
-    ResponseCache responseCache = new AbstractResponseCache() {
-      @Override public CacheResponse get(
-          URI uri, String method, Map<String, List<String>> headers) throws IOException {
-        assertEquals(toUri(serverUrl), uri);
-        assertEquals("GET", method);
-        assertTrue("Arbitrary standard header not present", headers.containsKey("User-Agent"));
-        assertEquals(Collections.singletonList("value1"), headers.get("key1"));
-        return null;
-      }
-    };
-    setInternalCache(new CacheAdapter(responseCache));
+    @Test
+    public void get_httpGet() throws Exception {
+        final URL serverUrl = configureServer(new MockResponse());
+        assertEquals("http", serverUrl.getProtocol());
 
-    connection = new OkUrlFactory(client).open(serverUrl);
-    connection.setRequestProperty("key1", "value1");
+        ResponseCache responseCache = new AbstractResponseCache() {
+            @Override
+            public CacheResponse get(
+                    URI uri, String method, Map<String, List<String>> headers) throws IOException {
+                assertEquals(toUri(serverUrl), uri);
+                assertEquals("GET", method);
+                assertTrue("Arbitrary standard header not present", headers.containsKey("User-Agent"));
+                assertEquals(Collections.singletonList("value1"), headers.get("key1"));
+                return null;
+            }
+        };
+        setInternalCache(new CacheAdapter(responseCache));
 
-    executeGet(connection);
-  }
+        connection = new OkUrlFactory(client).open(serverUrl);
+        connection.setRequestProperty("key1", "value1");
 
-  @Test public void get_httpsGet() throws Exception {
-    final URL serverUrl = configureHttpsServer(new MockResponse());
-    assertEquals("https", serverUrl.getProtocol());
+        executeGet(connection);
+    }
 
-    ResponseCache responseCache = new AbstractResponseCache() {
-      @Override public CacheResponse get(URI uri, String method, Map<String, List<String>> headers)
-          throws IOException {
-        assertEquals("https", uri.getScheme());
-        assertEquals(toUri(serverUrl), uri);
-        assertEquals("GET", method);
-        assertTrue("Arbitrary standard header not present", headers.containsKey("User-Agent"));
-        assertEquals(Collections.singletonList("value1"), headers.get("key1"));
-        return null;
-      }
-    };
-    setInternalCache(new CacheAdapter(responseCache));
-    client = client.newBuilder()
-        .sslSocketFactory(sslContext.getSocketFactory())
-        .hostnameVerifier(hostnameVerifier)
-        .build();
+    @Test
+    public void get_httpsGet() throws Exception {
+        final URL serverUrl = configureHttpsServer(new MockResponse());
+        assertEquals("https", serverUrl.getProtocol());
 
-    connection = new OkUrlFactory(client).open(serverUrl);
-    connection.setRequestProperty("key1", "value1");
+        ResponseCache responseCache = new AbstractResponseCache() {
+            @Override
+            public CacheResponse get(URI uri, String method, Map<String, List<String>> headers)
+                    throws IOException {
+                assertEquals("https", uri.getScheme());
+                assertEquals(toUri(serverUrl), uri);
+                assertEquals("GET", method);
+                assertTrue("Arbitrary standard header not present", headers.containsKey("User-Agent"));
+                assertEquals(Collections.singletonList("value1"), headers.get("key1"));
+                return null;
+            }
+        };
+        setInternalCache(new CacheAdapter(responseCache));
+        client = client.newBuilder()
+                .sslSocketFactory(sslContext.getSocketFactory())
+                .hostnameVerifier(hostnameVerifier)
+                .build();
 
-    executeGet(connection);
-  }
+        connection = new OkUrlFactory(client).open(serverUrl);
+        connection.setRequestProperty("key1", "value1");
 
-  @Test public void put_httpGet() throws Exception {
-    final String statusLine = "HTTP/1.1 200 Fantastic";
-    final byte[] response = "ResponseString".getBytes(StandardCharsets.UTF_8);
-    final URL serverUrl = configureServer(
-        new MockResponse()
-            .setStatus(statusLine)
-            .addHeader("A", "c")
-            .setBody(new Buffer().write(response)));
+        executeGet(connection);
+    }
 
-    ResponseCache responseCache = new AbstractResponseCache() {
-      @Override public CacheRequest put(URI uri, URLConnection connection) throws IOException {
-        assertTrue(connection instanceof HttpURLConnection);
-        assertFalse(connection instanceof HttpsURLConnection);
+    @Test
+    public void put_httpGet() throws Exception {
+        final String statusLine = "HTTP/1.1 200 Fantastic";
+        final byte[] response = "ResponseString".getBytes(StandardCharsets.UTF_8);
+        final URL serverUrl = configureServer(
+                new MockResponse()
+                        .setStatus(statusLine)
+                        .addHeader("A", "c")
+                        .setBody(new Buffer().write(response)));
 
-        assertEquals(response.length, connection.getContentLength());
+        ResponseCache responseCache = new AbstractResponseCache() {
+            @Override
+            public CacheRequest put(URI uri, URLConnection connection) throws IOException {
+                assertTrue(connection instanceof HttpURLConnection);
+                assertFalse(connection instanceof HttpsURLConnection);
 
-        HttpURLConnection httpUrlConnection = (HttpURLConnection) connection;
-        assertEquals("GET", httpUrlConnection.getRequestMethod());
-        assertTrue(httpUrlConnection.getDoInput());
-        assertFalse(httpUrlConnection.getDoOutput());
+                assertEquals(response.length, connection.getContentLength());
 
-        assertEquals("Fantastic", httpUrlConnection.getResponseMessage());
-        assertEquals(toUri(serverUrl), uri);
-        assertEquals(serverUrl, connection.getURL());
-        assertEquals("value", connection.getRequestProperty("key"));
+                HttpURLConnection httpUrlConnection = (HttpURLConnection) connection;
+                assertEquals("GET", httpUrlConnection.getRequestMethod());
+                assertTrue(httpUrlConnection.getDoInput());
+                assertFalse(httpUrlConnection.getDoOutput());
 
-        // Check retrieval by string key.
-        assertEquals(statusLine, httpUrlConnection.getHeaderField(null));
-        assertEquals("c", httpUrlConnection.getHeaderField("A"));
-        // The RI and OkHttp supports case-insensitive matching for this method.
-        assertEquals("c", httpUrlConnection.getHeaderField("a"));
-        return null;
-      }
-    };
-    setInternalCache(new CacheAdapter(responseCache));
+                assertEquals("Fantastic", httpUrlConnection.getResponseMessage());
+                assertEquals(toUri(serverUrl), uri);
+                assertEquals(serverUrl, connection.getURL());
+                assertEquals("value", connection.getRequestProperty("key"));
 
-    connection = new OkUrlFactory(client).open(serverUrl);
-    connection.setRequestProperty("key", "value");
-    executeGet(connection);
-  }
+                // Check retrieval by string key.
+                assertEquals(statusLine, httpUrlConnection.getHeaderField(null));
+                assertEquals("c", httpUrlConnection.getHeaderField("A"));
+                // The RI and OkHttp supports case-insensitive matching for this method.
+                assertEquals("c", httpUrlConnection.getHeaderField("a"));
+                return null;
+            }
+        };
+        setInternalCache(new CacheAdapter(responseCache));
 
-  @Test public void put_httpPost() throws Exception {
-    final String statusLine = "HTTP/1.1 200 Fantastic";
-    final URL serverUrl = configureServer(
-        new MockResponse()
-            .setStatus(statusLine)
-            .addHeader("A", "c"));
+        connection = new OkUrlFactory(client).open(serverUrl);
+        connection.setRequestProperty("key", "value");
+        executeGet(connection);
+    }
 
-    ResponseCache responseCache = new AbstractResponseCache() {
-      @Override public CacheRequest put(URI uri, URLConnection connection) throws IOException {
-        assertTrue(connection instanceof HttpURLConnection);
-        assertFalse(connection instanceof HttpsURLConnection);
+    @Test
+    public void put_httpPost() throws Exception {
+        final String statusLine = "HTTP/1.1 200 Fantastic";
+        final URL serverUrl = configureServer(
+                new MockResponse()
+                        .setStatus(statusLine)
+                        .addHeader("A", "c"));
 
-        assertEquals(0, connection.getContentLength());
+        ResponseCache responseCache = new AbstractResponseCache() {
+            @Override
+            public CacheRequest put(URI uri, URLConnection connection) throws IOException {
+                assertTrue(connection instanceof HttpURLConnection);
+                assertFalse(connection instanceof HttpsURLConnection);
 
-        HttpURLConnection httpUrlConnection = (HttpURLConnection) connection;
-        assertEquals("POST", httpUrlConnection.getRequestMethod());
-        assertTrue(httpUrlConnection.getDoInput());
-        assertTrue(httpUrlConnection.getDoOutput());
+                assertEquals(0, connection.getContentLength());
 
-        assertEquals("Fantastic", httpUrlConnection.getResponseMessage());
-        assertEquals(toUri(serverUrl), uri);
-        assertEquals(serverUrl, connection.getURL());
-        assertEquals("value", connection.getRequestProperty("key"));
+                HttpURLConnection httpUrlConnection = (HttpURLConnection) connection;
+                assertEquals("POST", httpUrlConnection.getRequestMethod());
+                assertTrue(httpUrlConnection.getDoInput());
+                assertTrue(httpUrlConnection.getDoOutput());
 
-        // Check retrieval by string key.
-        assertEquals(statusLine, httpUrlConnection.getHeaderField(null));
-        assertEquals("c", httpUrlConnection.getHeaderField("A"));
-        // The RI and OkHttp supports case-insensitive matching for this method.
-        assertEquals("c", httpUrlConnection.getHeaderField("a"));
-        return null;
-      }
-    };
-    setInternalCache(new CacheAdapter(responseCache));
+                assertEquals("Fantastic", httpUrlConnection.getResponseMessage());
+                assertEquals(toUri(serverUrl), uri);
+                assertEquals(serverUrl, connection.getURL());
+                assertEquals("value", connection.getRequestProperty("key"));
 
-    connection = new OkUrlFactory(client).open(serverUrl);
+                // Check retrieval by string key.
+                assertEquals(statusLine, httpUrlConnection.getHeaderField(null));
+                assertEquals("c", httpUrlConnection.getHeaderField("A"));
+                // The RI and OkHttp supports case-insensitive matching for this method.
+                assertEquals("c", httpUrlConnection.getHeaderField("a"));
+                return null;
+            }
+        };
+        setInternalCache(new CacheAdapter(responseCache));
 
-    executePost(connection);
-  }
+        connection = new OkUrlFactory(client).open(serverUrl);
 
-  @Test public void put_httpsGet() throws Exception {
-    final URL serverUrl = configureHttpsServer(new MockResponse());
-    assertEquals("https", serverUrl.getProtocol());
+        executePost(connection);
+    }
 
-    ResponseCache responseCache = new AbstractResponseCache() {
-      @Override public CacheRequest put(URI uri, URLConnection connection) throws IOException {
-        assertTrue(connection instanceof HttpsURLConnection);
-        assertEquals(toUri(serverUrl), uri);
-        assertEquals(serverUrl, connection.getURL());
+    @Test
+    public void put_httpsGet() throws Exception {
+        final URL serverUrl = configureHttpsServer(new MockResponse());
+        assertEquals("https", serverUrl.getProtocol());
 
-        HttpsURLConnection cacheHttpsUrlConnection = (HttpsURLConnection) connection;
-        HttpsURLConnection realHttpsUrlConnection =
-            (HttpsURLConnection) CacheAdapterTest.this.connection;
-        assertEquals(realHttpsUrlConnection.getCipherSuite(),
-            cacheHttpsUrlConnection.getCipherSuite());
-        assertEquals(realHttpsUrlConnection.getPeerPrincipal(),
-            cacheHttpsUrlConnection.getPeerPrincipal());
-        assertArrayEquals(realHttpsUrlConnection.getLocalCertificates(),
-            cacheHttpsUrlConnection.getLocalCertificates());
-        assertArrayEquals(realHttpsUrlConnection.getServerCertificates(),
-            cacheHttpsUrlConnection.getServerCertificates());
-        assertEquals(realHttpsUrlConnection.getLocalPrincipal(),
-            cacheHttpsUrlConnection.getLocalPrincipal());
-        return null;
-      }
-    };
-    setInternalCache(new CacheAdapter(responseCache));
-    client = client.newBuilder()
-        .sslSocketFactory(sslContext.getSocketFactory())
-        .hostnameVerifier(hostnameVerifier)
-        .build();
+        ResponseCache responseCache = new AbstractResponseCache() {
+            @Override
+            public CacheRequest put(URI uri, URLConnection connection) throws IOException {
+                assertTrue(connection instanceof HttpsURLConnection);
+                assertEquals(toUri(serverUrl), uri);
+                assertEquals(serverUrl, connection.getURL());
 
-    connection = new OkUrlFactory(client).open(serverUrl);
-    executeGet(connection);
-  }
+                HttpsURLConnection cacheHttpsUrlConnection = (HttpsURLConnection) connection;
+                HttpsURLConnection realHttpsUrlConnection =
+                        (HttpsURLConnection) CacheAdapterTest.this.connection;
+                assertEquals(realHttpsUrlConnection.getCipherSuite(),
+                        cacheHttpsUrlConnection.getCipherSuite());
+                assertEquals(realHttpsUrlConnection.getPeerPrincipal(),
+                        cacheHttpsUrlConnection.getPeerPrincipal());
+                assertArrayEquals(realHttpsUrlConnection.getLocalCertificates(),
+                        cacheHttpsUrlConnection.getLocalCertificates());
+                assertArrayEquals(realHttpsUrlConnection.getServerCertificates(),
+                        cacheHttpsUrlConnection.getServerCertificates());
+                assertEquals(realHttpsUrlConnection.getLocalPrincipal(),
+                        cacheHttpsUrlConnection.getLocalPrincipal());
+                return null;
+            }
+        };
+        setInternalCache(new CacheAdapter(responseCache));
+        client = client.newBuilder()
+                .sslSocketFactory(sslContext.getSocketFactory())
+                .hostnameVerifier(hostnameVerifier)
+                .build();
 
-  private void executeGet(HttpURLConnection connection) throws IOException {
-    connection.connect();
-    connection.getHeaderFields();
-    connection.disconnect();
-  }
+        connection = new OkUrlFactory(client).open(serverUrl);
+        executeGet(connection);
+    }
 
-  private void executePost(HttpURLConnection connection) throws IOException {
-    connection.setDoOutput(true);
-    connection.connect();
-    connection.getOutputStream().write("Hello World".getBytes());
-    connection.disconnect();
-  }
+    private void executeGet(HttpURLConnection connection) throws IOException {
+        connection.connect();
+        connection.getHeaderFields();
+        connection.disconnect();
+    }
 
-  private URL configureServer(MockResponse mockResponse) throws Exception {
-    server.enqueue(mockResponse);
-    server.start();
-    return server.url("/").url();
-  }
+    private void executePost(HttpURLConnection connection) throws IOException {
+        connection.setDoOutput(true);
+        connection.connect();
+        connection.getOutputStream().write("Hello World".getBytes());
+        connection.disconnect();
+    }
 
-  private URL configureHttpsServer(MockResponse mockResponse) throws Exception {
-    server.useHttps(sslContext.getSocketFactory(), false /* tunnelProxy */);
-    server.enqueue(mockResponse);
-    server.start();
-    return server.url("/").url();
-  }
+    private URL configureServer(MockResponse mockResponse) throws Exception {
+        server.enqueue(mockResponse);
+        server.start();
+        return server.url("/").url();
+    }
 
-  private void setInternalCache(InternalCache internalCache) {
-    OkHttpClient.Builder builder = client.newBuilder();
-    Internal.instance.setCache(builder, internalCache);
-    client = builder.build();
-  }
+    private URL configureHttpsServer(MockResponse mockResponse) throws Exception {
+        server.useHttps(sslContext.getSocketFactory(), false /* tunnelProxy */);
+        server.enqueue(mockResponse);
+        server.start();
+        return server.url("/").url();
+    }
+
+    private void setInternalCache(InternalCache internalCache) {
+        OkHttpClient.Builder builder = client.newBuilder();
+        Internal.instance.setCache(builder, internalCache);
+        client = builder.build();
+    }
 }
